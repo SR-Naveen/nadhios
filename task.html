@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover"/>
+  <meta name="theme-color" content="#030810" id="themeMeta"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="description" content="NaDhi OS — Enterprise Command Center"/>
+  <title>NaDhi OS</title>
+  <link rel="manifest" id="dynManifest"/>
+  <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
+
+  <link rel="stylesheet" href="task.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<div id="init">
+  <div class="init-glow">🛡️</div>
+  <h1 class="init-title">NaDhi OS</h1>
+  <p class="init-sub">Enterprise Command Center</p>
+  <div class="init-ring"></div>
+  <button class="boot-btn" onclick="initializeSystem()">Initialize System</button>
+  <p class="boot-hint">Secure Connection Setup</p>
+</div>
+
+<header>
+  <div class="brand"><div class="brand-dot" id="brandDot"></div>NaDhi OS</div>
+  <div class="hdr-right">
+    <div style="text-align:right">
+      <div class="hdr-clock" id="liveClock">00:00:00</div>
+      <div class="hdr-status off" id="hdrStatus">● OFFLINE</div>
+    </div>
+    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">☀️</button>
+  </div>
+</header>
+
+<div id="notifyBanner" class="banner">
+  <span>🔔 Enable Push Alerts</span>
+  <button class="banner-btn" onclick="reqNotify()">Enable</button>
+</div>
+
+<div id="toast"></div>
+
+<div id="main">
+  <section id="tab-command" class="tab-section active">
+    <div class="panel">
+      <div class="panel-title" id="formTitle">Command Center</div>
+      <div class="flabel">Quick Presets</div>
+      <div class="presets-scroll" id="presetsContainer"></div>
+
+      <div class="fwrap" style="position:relative">
+        <label class="flabel">Protocol Designation</label>
+        <input id="eventName" class="field" type="text" placeholder="e.g. Server Maintenance" autocomplete="off" oninput="this.classList.remove('err')"/>
+        <button class="mic-btn" id="micBtn" onclick="voiceType()" title="AI Voice Input">🎤</button>
+      </div>
+
+      <div class="row2">
+        <div class="fwrap">
+          <label class="flabel">Execution Date</label>
+          <div style="position:relative">
+            <input id="eventDate" class="field" type="date" onchange="this.classList.remove('err')"/>
+            <span class="field-icon">🗓️</span>
+          </div>
+        </div>
+        <div class="fwrap">
+          <label class="flabel">Execution Time</label>
+          <div style="position:relative">
+            <input id="eventTime" class="field" type="time" onchange="this.classList.remove('err')"/>
+            <span class="field-icon">🕑</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="row2">
+        <div class="fwrap">
+          <label class="flabel">Recurrence</label>
+          <select id="eventRepeat" class="field">
+            <option value="none">One-Time</option>
+            <option value="daily">Daily 🔄</option>
+            <option value="weekly">Weekly 🔄</option>
+          </select>
+        </div>
+        <div class="fwrap">
+          <label class="flabel">Category</label>
+          <select id="eventCategory" class="field">
+            <option value="work">Work 💼</option>
+            <option value="health">Health 💊</option>
+            <option value="personal">Personal 🏠</option>
+            <option value="other" selected>Other 📌</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row2">
+        <div class="fwrap">
+          <label class="flabel">Priority</label>
+          <select id="eventPriority" class="field">
+            <option value="standard">Standard</option>
+            <option value="critical">Critical 🔴</option>
+          </select>
+        </div>
+        <div class="fwrap">
+          <label class="flabel">Alert Channel</label>
+          <select id="alertType" class="field" onchange="handleChannelChange()">
+            <option value="sms">SMS 📱</option>
+            <option value="voice-female">Voice Female 👩</option>
+            <option value="voice-male">Voice Male 👨</option>
+            <option value="custom-music">Own Music 🎵</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="customMusicGroup" class="fwrap" style="display:none">
+        <label class="flabel">Upload Music (MP3/WAV, max 1MB)</label>
+        <input id="customAudioInput" class="field" type="file" accept="audio/*"/>
+      </div>
+
+      <button id="saveBtn" class="deploy-btn" onclick="deployProtocol()">Deploy Protocol 🚀</button>
+      <button id="cancelEditBtn" class="cancel-btn" style="display:none" onclick="cancelEdit()">Cancel Edit</button>
+    </div>
+  </section>
+
+  <section id="tab-radar" class="tab-section">
+    <div class="radar-top">
+      <div class="panel-title" style="margin-bottom:0">Live Radar</div>
+      <div class="view-tog">
+        <button class="vbtn active" id="btnViewList" onclick="toggleRadarView('list')">📜</button>
+        <button class="vbtn" id="btnViewCal" onclick="toggleRadarView('calendar')">📅</button>
+      </div>
+    </div>
+    <div class="srch-wrap">
+      <span class="srch-ico">🔍</span>
+      <input id="searchRadar" class="srch" type="text" placeholder="Search active protocols..." onkeyup="searchEvents('radar')"/>
+    </div>
+    <p class="hint-txt">⟵ Swipe left on card to delete</p>
+    <div id="eventsList" class="ev-list"></div>
+    <div id="calendarView" style="display:none;animation:fadeUp 0.28s ease"></div>
+  </section>
+
+  <section id="tab-history" class="tab-section">
+    <div class="hist-top">
+      <div class="panel-title" style="margin-bottom:0;color:var(--green)">Protocol Logs</div>
+      <div style="display:flex;gap:8px">
+        <button class="act-btn btn-exp" onclick="exportCSV()">📥 CSV</button>
+        <button class="act-btn btn-clr" onclick="clearHistory()">🗑️ CLR</button>
+      </div>
+    </div>
+    <div class="srch-wrap">
+      <span class="srch-ico">🔍</span>
+      <input id="searchHistory" class="srch" type="text" placeholder="Search past logs..." onkeyup="searchEvents('history')"/>
+    </div>
+    <div id="historyList" class="ev-list"></div>
+    <div id="loadMoreContainer" style="text-align:center;margin-top:14px;display:none">
+      <button class="cancel-btn" style="width:auto;padding:12px 30px;display:inline-block" onclick="loadMoreHistory()">Load More ↓</button>
+    </div>
+  </section>
+
+  <section id="tab-settings" class="tab-section">
+    <div class="auth-card">
+      <h3>Cloud Status ☁️</h3>
+      <p id="userEmailTxt" style="color: var(--primary); font-weight: 700;">GUEST MODE — SUPABASE ACTIVE</p>
+      <p style="font-size: 11px; color: var(--muted);">Data is automatically synced to your cloud database.</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">System Settings</div>
+      <div class="toggle-row">
+        <div class="toggle-info"><span class="t-label">SFX Audio 🔊</span><span class="t-sub">Interface sounds active</span></div>
+        <label class="switch"><input type="checkbox" id="sfxToggle" onchange="toggleSFX()"/><span class="slider"></span></label>
+      </div>
+
+      <div class="fwrap">
+        <label class="flabel">Alarm Tone</label>
+        <select id="settingTone" class="field" onchange="updateSettings()">
+          <option value="default">Sci-Fi Alert</option>
+          <option value="bell">Classic Bell 🔔</option>
+        </select>
+      </div>
+      
+      <button class="test-btn" onclick="testAlarm()">🔊 Test Alarm System</button>
+    </div>
+  </section>
+</div>
+
+<nav>
+  <button class="nav-item active" onclick="switchTab('command',this)"><span class="nav-icon">🚀</span>Command</button>
+  <button class="nav-item" onclick="switchTab('radar',this)"><span class="nav-icon">📡</span>Radar<span class="nav-badge" id="radarBadge"></span></button>
+  <button class="nav-item" onclick="switchTab('history',this)"><span class="nav-icon">📜</span>History<span class="nav-badge" id="histBadge"></span></button>
+  <button class="nav-item" onclick="switchTab('settings',this)"><span class="nav-icon">⚙️</span>Settings</button>
+</nav>
+
+<div class="modal-overlay" id="alarmModal">
+  <div class="modal-box">
+    <div class="m-icon">🚨</div>
+    <div class="m-title">Critical Alert</div>
+    <div class="m-name" id="modalEventName">--</div>
+    <div class="modal-btns">
+      <button class="btn-snooze" onclick="snoozeAlarm()">Snooze ⏳</button>
+      <button class="btn-ack" onclick="acknowledgeAlarm()">Stop 🛑</button>
+    </div>
+  </div>
+</div>
+
+<script src="task.js"></script>
+</body>
+</html>

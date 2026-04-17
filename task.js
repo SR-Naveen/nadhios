@@ -549,3 +549,9 @@ setInterval(()=>{
 applyTheme();
 loadSettingsUI();
 renderPresets();
+// ─── NOTIFICATIONS FIX ───────────────────────────────────
+window.reqNotify = function(){
+  if('Notification' in window) Notification.requestPermission().then(p=>{
+    if(p==='granted') showToast('Push Alerts Enabled 🔔');
+  });
+};

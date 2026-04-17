@@ -6,7 +6,7 @@
 let supabaseClient = null;
 if (typeof supabase !== 'undefined') {
   const supabaseUrl = 'https://odgoairxkxlaxnitfmnn.supabase.co';
-  const supabaseKey = 'sb_publishable_zzW3MwTSnz-cAkVJvRzUhw_oxMXrVde';
+  const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9kZ29haXJ4a3hsYXhuaXRmbW5uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyMzQ3MzQsImV4cCI6MjA5MTgxMDczNH0.v59S7zKQLy8l5LUuLUFHNDxsgCDJRsxAeJdRf-jVElI';
   supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
 }
 

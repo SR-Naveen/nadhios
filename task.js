@@ -3,22 +3,27 @@
 ═══════════════════════════════════════════════════════ */
 
 // ─── SUPABASE CONFIGURATION ──────────────────────────────
-const supabaseUrl = 'https://odgoairxkxlaxnitfmnn.supabase.co';
-const supabaseKey = 'sb_publishable_zzW3MwTSnz-cAkVJvRzUhw_oxMXrVde';
-const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+let supabaseClient = null;
+if (typeof supabase !== 'undefined') {
+  const supabaseUrl = 'https://odgoairxkxlaxnitfmnn.supabase.co';
+  const supabaseKey = 'sb_publishable_zzW3MwTSnz-cAkVJvRzUhw_oxMXrVde';
+  supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+}
 
-// ─── CONFIG & STATE ──────────────────────────────────────
+// ─── CONFIG ──────────────────────────────────────────────
 let sysSettings = JSON.parse(localStorage.getItem('nadhi_settings') || 'null');
 if (!sysSettings) {
   sysSettings = {
-    volume:1.0, speed:0.9,
+    volume: 1.0, 
+    speed: 0.9,
     theme: window.matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light',
-    tone:'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3',
-    sfxEnabled:true
+    tone: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3',
+    sfxEnabled: true
   };
 }
 window.sysSettings = sysSettings;
 
+// ─── STATE ───────────────────────────────────────────────
 let savedEvents      = [];
 let editingEventId   = null;
 let activeAlarmEventId = null;
@@ -28,35 +33,10 @@ let pwaPrompt        = null;
 let calMonth         = new Date();
 let customPresets    = JSON.parse(localStorage.getItem('nadhi_custom_presets') || '[]');
 
+// Alarm audio
 let alarmSound = new Audio(sysSettings.tone);
 alarmSound.loop = true;
 window.alarmSound = alarmSound;
-
-// ─── FETCH DATA FROM SUPABASE ────────────────────────────
-window.fetchFromSupabase = async function() {
-    const { data, error } = await supabaseClient
-        .from('protocols')
-        .select('*')
-        .order('timestamp', { ascending: true }); 
-
-    if (error) {
-        console.error("Fetch Error:", error);
-    } else {
-        savedEvents = data.map(item => ({
-             ...item,
-             createdAt: item.created_at, 
-             rawDate: item.raw_date,
-             rawTime: item.raw_time,
-             isNotified: item.is_notified,
-             isArchived: item.is_archived
-        }));
-        renderViews();      
-        updateNavBadges();  
-    }
-};
-
-// Start aagum pothu fetch panrom
-fetchFromSupabase();
 
 // ─── AUDIO ENGINE ────────────────────────────────────────
 let _actx = null;
@@ -82,6 +62,11 @@ window.playSuccessSFX= ()=>{playTone(400,'sine',0.1,0.13);setTimeout(()=>playTon
 window.playErrorSFX  = ()=>{playTone(300,'sawtooth',0.1,0.13);setTimeout(()=>playTone(150,'sawtooth',0.18,0.13),100)};
 window.playDeleteSFX = ()=>{playTone(200,'square',0.18,0.13);setTimeout(()=>playTone(100,'square',0.24,0.13),100)};
 
+// ─── PERSIST ─────────────────────────────────────────────
+function persist() {
+  try { localStorage.setItem('nadhi_os_cloud', JSON.stringify(savedEvents)); } catch(e) {}
+}
+
 // ─── PRESETS ─────────────────────────────────────────────
 const defaultPresets = [
   {name:'💧 Hydration Check',priority:'standard',method:'voice-female',category:'health',icon:'💧',label:'Water'},
@@ -89,6 +74,9 @@ const defaultPresets = [
   {name:'👥 Standup Sync',priority:'standard',method:'voice-male',category:'work',icon:'👥',label:'Meeting'},
   {name:'💊 Medication',priority:'critical',method:'voice-female',category:'health',icon:'💊',label:'Meds'},
   {name:'☕ Coffee Break',priority:'standard',method:'voice-female',category:'personal',icon:'☕',label:'Coffee'},
+  {name:'🏋️ Gym Workout',priority:'standard',method:'voice-male',category:'health',icon:'🏋️',label:'Gym'},
+  {name:'🧘 Meditation',priority:'standard',method:'voice-female',category:'health',icon:'🧘',label:'Mindful'},
+  {name:'✈️ Travel Depart',priority:'critical',method:'sms',category:'other',icon:'✈️',label:'Travel'},
 ];
 
 window.renderPresets = function() {
@@ -146,18 +134,15 @@ function boot() {
   showToast('System Online 🟢');
   speakFeedback('NaDhi OS System Online. Ready for commands, Boss.');
   
-  // Update status for Supabase
-  document.getElementById('hdrStatus').textContent='● CLOUD';
-  document.getElementById('hdrStatus').className='hdr-status on';
-  document.getElementById('brandDot').style.background='var(--primary)';
-  document.getElementById('brandDot').style.boxShadow='0 0 10px var(--primary)';
+  // Load initial data
+  loadLocalData();
   
   if ('Notification' in window && Notification.permission==='default') {
     document.getElementById('notifyBanner').style.display='flex';
   }
 }
 
-// ─── THEME ───────────────────────────────────────────────
+// ─── THEME & SETTINGS ────────────────────────────────────
 window.applyTheme = function() {
   const light = sysSettings.theme==='light';
   document.body.classList.toggle('light', light);
@@ -169,7 +154,6 @@ window.toggleTheme = function() {
   playClickSFX(); localStorage.setItem('nadhi_settings', JSON.stringify(sysSettings)); applyTheme();
 };
 
-// ─── SETTINGS ────────────────────────────────────────────
 function loadSettingsUI() {
   document.getElementById('settingVolume').value = sysSettings.volume;
   document.getElementById('settingSpeed').value = sysSettings.speed;
@@ -185,18 +169,16 @@ window.updateSettings = function() {
   document.getElementById('volLabel').textContent = Math.round(sysSettings.volume*100)+'%';
   document.getElementById('speedLabel').textContent = sysSettings.speed+'x';
   alarmSound.src = sysSettings.tone;
-  saveSettings();
-};
-function saveSettings() {
   localStorage.setItem('nadhi_settings', JSON.stringify(sysSettings));
-}
+};
 window.toggleSFX = function() {
   sysSettings.sfxEnabled = document.getElementById('sfxToggle').checked;
-  if (sysSettings.sfxEnabled) playSuccessSFX(); saveSettings();
+  if (sysSettings.sfxEnabled) playSuccessSFX(); 
+  localStorage.setItem('nadhi_settings', JSON.stringify(sysSettings));
 };
 window.testAlarm = function() {
   playClickSFX();
-  triggerAlarm({id:'test',name:'System Test Protocol',method:'voice-female',priority:'critical'});
+  triggerAlarm({id:'test',name:'System Test Protocol',method:document.getElementById('alertType').value,priority:'critical'});
   setTimeout(() => acknowledgeAlarm(), 5000);
 };
 
@@ -234,7 +216,15 @@ window.handleChannelChange = function() {
     document.getElementById('alertType').value==='custom-music' ? 'block' : 'none';
 };
 
-// ─── DEPLOY (SAVE TO SUPABASE) ───────────────────────────
+// ─── DATA SYNC & DEPLOY ──────────────────────────────────
+function loadLocalData() {
+  const local = localStorage.getItem('nadhi_os_cloud');
+  if(local) {
+      try { savedEvents = JSON.parse(local); renderViews(); updateNavBadges(); } 
+      catch(e) { savedEvents = []; }
+  }
+}
+
 window.deployProtocol = async function() {
   playClickSFX();
   const nameEl=document.getElementById('eventName'),dateEl=document.getElementById('eventDate'),timeEl=document.getElementById('eventTime');
@@ -244,57 +234,66 @@ window.deployProtocol = async function() {
   if (!dateEl.value)        { dateEl.classList.add('err'); err=true; }
   if (!timeEl.value)        { timeEl.classList.add('err'); err=true; }
   if (err) { showToast('Fill highlighted fields','error'); playErrorSFX(); return; }
- 
+
   const [h,mi] = timeEl.value.split(':');
   const [yy, mm, dd] = dateEl.value.split('-'); 
   const evDate = new Date(parseInt(yy), parseInt(mm) - 1, parseInt(dd));
   evDate.setHours(parseInt(h), parseInt(mi), 0, 0);
   const timestamp = evDate.getTime();
   if (timestamp<Date.now()) { showToast('Time is in the past','error'); timeEl.classList.add('err'); playErrorSFX(); return; }
- 
+
   const fmtDate=evDate.toLocaleDateString('en-US',{month:'short',day:'2-digit',year:'numeric'});
   const fmtTime=evDate.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true});
   const eventId = editingEventId || 'N-'+Date.now();
- 
+
+  let customAudioData = null;
+  if (document.getElementById('alertType').value==='custom-music') {
+    const fi=document.getElementById('customAudioInput');
+    if (fi.files.length>0) {
+      if (fi.files[0].size > 1024 * 1024) { showToast('File too large! Max 1MB.', 'error'); playErrorSFX(); return; }
+      customAudioData = await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej();r.readAsDataURL(fi.files[0])});
+    } else if (!editingEventId) { showToast('Select music file','error'); playErrorSFX(); return; }
+  }
+
   const newEvent = {
-    id:eventId, 
-    name:nameEl.value.trim(), 
-    date:fmtDate, 
-    time:fmtTime,
+    id:eventId, name:nameEl.value.trim(), date:fmtDate, time:fmtTime,
     priority:document.getElementById('eventPriority').value,
     method:document.getElementById('alertType').value,
+    repeat:document.getElementById('eventRepeat').value,
     category:document.getElementById('eventCategory').value,
-    timestamp: timestamp, 
-    created_at:Date.now(),
-    raw_date:dateEl.value, 
-    raw_time:timeEl.value,
-    is_notified:false, 
-    is_archived:false
+    timestamp, createdAt:Date.now(),
+    rawDate:dateEl.value, rawTime:timeEl.value,
+    isNotified:false, isArchived:false,
+    customAudio:customAudioData,
   };
- 
+
   const btn = document.getElementById('saveBtn');
   btn.disabled=true;
   btn.innerHTML=`<span class="spinner"></span>${editingEventId?'Updating...':'Deploying...'}`;
- 
-  // Send data to Supabase
-  const { data, error: supaErr } = await supabaseClient
-    .from('protocols')
-    .upsert([newEvent]);
 
-  if (supaErr) {
-      console.error('Supabase Error:', supaErr);
-      showToast('Database Error! Check console.', 'error');
-      playErrorSFX();
-  } else {
-      showToast(editingEventId ? 'Protocol Updated in Cloud 📝' : 'Deployed to Cloud 🚀');
-      speakFeedback(editingEventId ? 'Protocol updated, Boss.' : 'Protocol saved to Cloud, Boss.');
-      fetchFromSupabase(); 
+  // Local Save (Fast UI)
+  if (editingEventId) savedEvents=savedEvents.map(e=>e.id===editingEventId?newEvent:e);
+  else savedEvents.push(newEvent);
+  
+  try { persist(); } catch(e) {
+    showToast('Storage Full! Remove old data.','error'); playErrorSFX();
+    savedEvents = savedEvents.filter(e => e.id !== eventId);
+    btn.disabled = false; btn.innerHTML = 'Deploy Protocol 🚀'; return; 
   }
 
-  btn.disabled = false;
-  btn.innerHTML = 'Deploy Protocol 🚀';
-  editingEventId=null; 
-  resetForm(); 
+  // Supabase Cloud Sync (Background)
+  if (supabaseClient) {
+      try {
+          // Attempt to sync to cloud if table exists
+          await supabaseClient.from('protocols').upsert(newEvent);
+      } catch(e) { console.warn("Supabase sync skipped - Table might not exist yet."); }
+  }
+
+  if ('Notification' in window && Notification.permission==='default') reqNotify();
+  playSuccessSFX();
+  showToast(editingEventId ? 'Protocol Updated 📝' : 'Deployed Successfully 🚀');
+  speakFeedback(editingEventId?'Protocol updated, Boss.':'Protocol saved and secured, Boss.');
+  editingEventId=null; resetForm(); renderViews(); updateNavBadges();
   switchTab('radar', document.querySelectorAll('.nav-item')[1]);
 };
 
@@ -335,16 +334,18 @@ window.editProtocol = function(id) {
   switchTab('command',document.querySelectorAll('.nav-item')[0]);
 };
 
-// Delete from Supabase
 window.abortProtocol = async function(id) {
   playDeleteSFX();
   
-  // Delete from DB
-  await supabaseClient.from('protocols').delete().eq('id', id);
-  
+  // Update Local
   savedEvents=savedEvents.filter(e=>e.id!==id);
-  renderViews(); updateNavBadges();
-  
+  persist(); renderViews(); updateNavBadges();
+
+  // Update Supabase
+  if(supabaseClient) {
+      try { await supabaseClient.from('protocols').delete().eq('id', id); } catch(e) {}
+  }
+
   showToast('Protocol Deleted','error');
   speakFeedback('Protocol aborted, Boss.');
 };
@@ -357,7 +358,6 @@ function fmtDiff(ms){ const s=Math.floor(ms/1000);return`${String(Math.floor(s/3
 window.renderViews = function() {
   const radarList=document.getElementById('eventsList');
   const histList=document.getElementById('historyList');
-  const loadMoreBtn=document.getElementById('loadMoreContainer');
   radarList.innerHTML=''; histList.innerHTML='';
   let aCount=0;
   const searchR=document.getElementById('searchRadar').value.toLowerCase();
@@ -376,10 +376,7 @@ window.renderViews = function() {
     const exClass=diff<=0?'exec':'';
 
     radarList.insertAdjacentHTML('beforeend',`
-      <div class="ev-card ${isCrit?'crit':''}" id="${evt.id}" data-name="${nm}" style="animation-delay:${i*0.04}s"
-        ontouchstart="handleTouchStart(event,'${evt.id}')"
-        ontouchmove="handleTouchMove(event,'${evt.id}')"
-        ontouchend="handleTouchEnd(event,'${evt.id}')">
+      <div class="ev-card ${isCrit?'crit':''}" id="${evt.id}" data-name="${nm}">
         <div class="swipe-bg">🗑️ DELETE</div>
         <button class="edit-btn" onclick="editProtocol('${evt.id}')">✏️</button>
         <div class="ev-title">${isCrit?'🔴':'🔵'} ${evt.name}</div>
@@ -395,21 +392,16 @@ window.renderViews = function() {
       </div>`);
   });
 
-  if (aCount===0) radarList.innerHTML='<div class="empty"><span class="empty-ico">📡</span>Radar Clear — No Active Protocols</div>';
+  if (aCount===0) radarList.innerHTML='<div class="empty">📡 Radar Clear — No Active Protocols</div>';
 
   const allHist=savedEvents.filter(e=>e.isArchived);
   const filtH=allHist.filter(e=>e.name.toLowerCase().includes(searchH));
   const pagH=filtH.slice(0,historyDisplayLimit);
-  loadMoreBtn.style.display=filtH.length>historyDisplayLimit?'block':'none';
 
-  if (!pagH.length) { histList.innerHTML='<div class="empty"><span class="empty-ico">📜</span>No History Logs Yet</div>'; }
+  if (!pagH.length) { histList.innerHTML='<div class="empty">📜 No History Logs Yet</div>'; }
   pagH.forEach((evt,i) => {
     histList.insertAdjacentHTML('beforeend',`
-      <div class="ev-card hist" data-name="${evt.name.toLowerCase()}" style="animation-delay:${i*0.04}s"
-        ontouchstart="handleTouchStart(event,'${evt.id}')"
-        ontouchmove="handleTouchMove(event,'${evt.id}')"
-        ontouchend="handleTouchEnd(event,'${evt.id}')">
-        <div class="swipe-bg">🗑️ DELETE</div>
+      <div class="ev-card hist" data-name="${evt.name.toLowerCase()}">
         <div class="ev-title">${evt.priority==='critical'?'🔴':'🔵'} ${evt.name}</div>
         <div class="ev-meta"><span>📅 ${evt.date}</span><span>🕒 ${evt.time}</span></div>
         <div class="ev-foot">
@@ -418,124 +410,66 @@ window.renderViews = function() {
         </div>
       </div>`);
   });
-
-  if (currentRadarView==='calendar') renderCalendar();
 };
 
-function renderCalendar() {
-  const cv=document.getElementById('calendarView'); cv.innerHTML='';
-  const y=calMonth.getFullYear(),mo=calMonth.getMonth();
-  const dim=new Date(y,mo+1,0).getDate(),first=new Date(y,mo,1).getDay();
-  const mnames=['January','February','March','April','May','June','July','August','September','October','November','December'];
-  let h=`<div class="cal-wrap">
-    <div class="cal-hdr">
-      <button class="cal-nav-btn" onclick="changeCalMonth(-1)">‹</button>
-      <div class="cal-month-lbl">${mnames[mo]} ${y}</div>
-      <button class="cal-nav-btn" onclick="changeCalMonth(1)">›</button>
-    </div>
-    <div class="cal-days-row">${['S','M','T','W','T','F','S'].map(d=>`<div>${d}</div>`).join('')}</div>
-    <div class="cal-grid">`;
-  for(let i=0;i<first;i++) h+='<div class="cal-cell empty"></div>';
-  const now=new Date();
-  for(let d=1;d<=dim;d++){
-    const ds=new Date(y,mo,d).toLocaleDateString('en-US',{month:'short',day:'2-digit',year:'numeric'});
-    const evs=savedEvents.filter(e=>!e.isArchived&&e.date===ds);
-    const isToday=d===now.getDate()&&mo===now.getMonth()&&y===now.getFullYear();
-    const dots=evs.map(e=>`<div class="cal-dot ${e.priority==='critical'?'crit':''}"></div>`).join('');
-    h+=`<div class="cal-cell ${isToday?'today':''}"><div class="cal-num">${d}</div><div class="cal-dots">${dots}</div></div>`;
-  }
-  h+='</div></div>';
-  cv.innerHTML=h;
+// ─── ALARM & TEXT TO SPEECH ──────────────────────────────
+const synth = window.speechSynthesis;
+let systemVoices = [];
+function populateVoiceList() { if (synth) systemVoices = synth.getVoices(); }
+if (synth && 'onvoiceschanged' in synth) synth.onvoiceschanged = populateVoiceList;
+populateVoiceList();
+
+function playVoiceAlert(message, channelType) {
+  if (!synth) return;
+  if (synth.speaking) synth.cancel();
+  if (systemVoices.length === 0) systemVoices = synth.getVoices();
+
+  const utterance = new SpeechSynthesisUtterance(message);
+  let selectedVoice = systemVoices.find(voice => 
+      channelType === 'voice-female' ? /female|zira|samantha/i.test(voice.name) : /male|david|mark/i.test(voice.name)
+  );
+  if (selectedVoice) utterance.voice = selectedVoice;
+  utterance.rate = sysSettings.speed;
+  utterance.volume = sysSettings.volume;
+  setTimeout(() => synth.speak(utterance), 50);
+  return utterance;
 }
-function changeCalMonth(dir){playClickSFX();calMonth=new Date(calMonth.getFullYear(),calMonth.getMonth()+dir,1);renderCalendar()}
 
-// ─── SWIPE DELETE ────────────────────────────────────────
-let _startX=0,_curX=0;
-window.handleTouchStart=(e,id)=>{_startX=e.touches[0].clientX;};
-window.handleTouchMove=(e,id)=>{
-  _curX=e.touches[0].clientX;
-  const el=document.getElementById(id);
-  if(el&&_curX-_startX<0)el.style.transform=`translateX(${_curX-_startX}px)`;
-};
-window.handleTouchEnd=(e,id)=>{
-  const el=document.getElementById(id); if(!el)return;
-  if(_curX-_startX<-90){el.style.transition='transform 0.2s ease';el.style.transform='translateX(-100vw)';setTimeout(()=>abortProtocol(id),190);}
-  else{el.style.transform='';}
-};
-
-window.searchEvents=function(tab){if(tab==='radar')renderViews();else renderViews()};
-window.loadMoreHistory=function(){playClickSFX();historyDisplayLimit+=20;renderViews()};
-window.toggleRadarView=function(viewType){
-  playClickSFX(); currentRadarView=viewType;
-  document.getElementById('btnViewList').classList.toggle('active',viewType==='list');
-  document.getElementById('btnViewCal').classList.toggle('active',viewType==='calendar');
-  document.getElementById('eventsList').style.display=viewType==='list'?'flex':'none';
-  document.getElementById('calendarView').style.display=viewType==='calendar'?'block':'none';
-  if(viewType==='calendar')renderCalendar();
-};
-
-// ─── ALARM ───────────────────────────────────────────────
 window.triggerAlarm=function(evt){
   activeAlarmEventId=evt.id;
   document.getElementById('modalEventName').textContent=evt.name;
-  const ch={sms:'ENCRYPTED SMS','voice-female':'VOICE (FEMALE)','voice-male':'VOICE (MALE)','custom-music':'OWN MUSIC 🎵'}[evt.method]||evt.method;
-  document.getElementById('modalEventMode').textContent=ch;
   document.getElementById('alarmModal').classList.add('active');
-  if('Notification' in window&&Notification.permission==='granted'){
-    const n=new Notification('🚨 Protocol: '+evt.name,{body:'Execution Target Reached. Channel: '+ch,icon:'https://cdn-icons-png.flaticon.com/512/1827/1827372.png',vibrate:[300,100,300,100,500]});
-    n.onclick=()=>{window.focus();n.close()};
-  }
-  if('vibrate' in navigator)navigator.vibrate([300,100,300,100,500,200,500]);
-  if(evt.method.startsWith('voice')&&'speechSynthesis' in window){
-    const u=new SpeechSynthesisUtterance(`Attention Boss. Protocol for ${evt.name} has reached execution time.`);
-    u.rate=sysSettings.speed;
-    const vs=speechSynthesis.getVoices();
-    let sel=evt.method==='voice-female'?vs.find(v=>/female|woman|zira|samantha|siri|victoria/i.test(v.name)):vs.find(v=>/male|man|david|mark|daniel/i.test(v.name));
-    if(sel)u.voice=sel;
-    alarmSound.src=sysSettings.tone;alarmSound.volume=sysSettings.volume*0.2;alarmSound.currentTime=0;
-    alarmSound.play().catch(()=>{});
-    speechSynthesis.speak(u);
+  
+  if(evt.method==='custom-music'&&evt.customAudio){
+    alarmSound.src=evt.customAudio;alarmSound.volume=sysSettings.volume;alarmSound.currentTime=0;
+    alarmSound.play().catch(()=>showToast('🚨 ALARM TRIGGERED! Click to hear.','error'));
+  } else if(evt.method.startsWith('voice')){
+    const message = `Attention Boss. Protocol for ${evt.name} has reached execution time.`;
+    playVoiceAlert(message, evt.method);
   } else {
     alarmSound.src=sysSettings.tone;alarmSound.volume=sysSettings.volume;alarmSound.currentTime=0;
-    alarmSound.play().catch(()=>{});
+    alarmSound.play().catch(()=>showToast('🚨 ALARM TRIGGERED!','error'));
   }
 };
 
 function stopAlarm(){
   alarmSound.pause();alarmSound.currentTime=0;
-  if('speechSynthesis' in window)speechSynthesis.cancel();
-  if('vibrate' in navigator)navigator.vibrate(0);
+  if('speechSynthesis' in window)synth.cancel();
   document.getElementById('alarmModal').classList.remove('active');
 }
 
 window.snoozeAlarm=async function(){
   playClickSFX(); stopAlarm();
-  if(activeAlarmEventId==='test'){activeAlarmEventId=null;showToast('Test Snoozed');return;}
+  if(activeAlarmEventId==='test'){activeAlarmEventId=null;return;}
   const evt=savedEvents.find(e=>e.id===activeAlarmEventId);
   if(evt){
     const nTs=Date.now()+5*60*1000,nD=new Date(nTs),pad=n=>n<10?'0'+n:n;
-    evt.timestamp=nTs;
-    evt.date=nD.toLocaleDateString('en-US',{month:'short',day:'2-digit',year:'numeric'});
+    evt.timestamp=nTs;evt.isNotified=false;
     evt.time=nD.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true});
-    evt.rawDate=`${nD.getFullYear()}-${pad(nD.getMonth()+1)}-${pad(nD.getDate())}`;
-    evt.rawTime=`${pad(nD.getHours())}:${pad(nD.getMinutes())}`;
-    evt.isNotified=false;
-    
-    await supabaseClient.from('protocols').update({
-        timestamp: nTs,
-        date: evt.date,
-        time: evt.time,
-        raw_date: evt.rawDate,
-        raw_time: evt.rawTime,
-        is_notified: false
-    }).eq('id', evt.id);
-    
-    fetchFromSupabase();
+    persist(); renderViews();
   }
   activeAlarmEventId=null;
-  document.getElementById('searchRadar').value='';
   showToast('Snoozed 5 mins ⏳','warn');
-  speakFeedback('Alarm snoozed for 5 minutes, Boss.');
 };
 
 window.acknowledgeAlarm=async function(){
@@ -543,126 +477,75 @@ window.acknowledgeAlarm=async function(){
   if(activeAlarmEventId==='test'){activeAlarmEventId=null;return;}
   const evt=savedEvents.find(e=>e.id===activeAlarmEventId);
   if(evt){
-    evt.isArchived = true;
-    await supabaseClient.from('protocols').update({ is_archived: true }).eq('id', evt.id);
-    fetchFromSupabase();
+    if(evt.repeat&&evt.repeat!=='none'){
+      evt.timestamp=evt.timestamp+(evt.repeat==='daily'?86400000:604800000);
+      evt.isNotified=false; persist();
+    } else {
+      evt.isArchived=true; persist();
+    }
+    renderViews(); updateNavBadges();
   }
   activeAlarmEventId=null;
 };
 
 // ─── CSV / CLEAR ─────────────────────────────────────────
-window.exportCSV=function(){
-  playClickSFX();
-  const hist=savedEvents.filter(e=>e.isArchived);
-  if(!hist.length){showToast('No logs to export','error');playErrorSFX();return;}
-  let csv='Protocol Name,Execution Date,Execution Time,Priority,Channel,Category\n';
-  hist.forEach(e=>{csv+=`"${e.name}","${e.date}","${e.time}","${e.priority}","${e.method}","${e.category||'other'}"\n`});
-  const a=document.createElement('a');a.href=encodeURI('data:text/csv;charset=utf-8,'+csv);
-  a.download=`NaDhi_OS_Logs_${new Date().toISOString().split('T')[0]}.csv`;
-  document.body.appendChild(a);a.click();document.body.removeChild(a);
-  showToast('Export Complete 📥');playSuccessSFX();
-};
-
 window.clearHistory=async function(){
   playClickSFX();
   if(!confirm('Clear all history logs?'))return;
-  const hist=savedEvents.filter(e=>e.isArchived);
-  if(!hist.length){showToast('History empty','error');playErrorSFX();return;}
-  
-  for (const e of hist) {
-     await supabaseClient.from('protocols').delete().eq('id', e.id);
-  }
-  
-  fetchFromSupabase();
+  savedEvents=savedEvents.filter(e=>!e.isArchived);
+  persist();renderViews();updateNavBadges();
   showToast('History Cleared 🧹');playDeleteSFX();
-  speakFeedback('History cleared, Boss.');
 };
 
-// ─── NAV / TABS ──────────────────────────────────────────
 window.switchTab=function(tabId,btnEl){
   playSwitchSFX();
   document.querySelectorAll('.tab-section').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));
   document.getElementById('tab-'+tabId).classList.add('active');
   btnEl.classList.add('active');
-  document.getElementById('main').scrollTop=0;
 };
 function updateNavBadges(){
   const active=savedEvents.filter(e=>!e.isArchived).length;
-  const hist=savedEvents.filter(e=>e.isArchived).length;
-  const rb=document.getElementById('radarBadge'),hb=document.getElementById('histBadge');
-  rb.textContent=active;rb.style.display=active>0?'flex':'none';
-  hb.textContent=hist;hb.style.display=hist>0?'flex':'none';
+  document.getElementById('radarBadge').style.display=active>0?'flex':'none';
+  document.getElementById('radarBadge').textContent=active;
 }
 
-window.requestNotificationPermission = window.reqNotify = function(){
-  playClickSFX();
-  if('Notification' in window)Notification.requestPermission().then(p=>{
-    if(p==='granted'){document.getElementById('notifyBanner').style.display='none';showToast('Push Alerts Enabled 🔔');playSuccessSFX();}
-  });
-};
-
 window.speakFeedback=function(text){
-  if(!('speechSynthesis' in window))return;
-  speechSynthesis.cancel();
+  if(!synth) return;
+  if(synth.speaking) synth.cancel();
   const u=new SpeechSynthesisUtterance(text);
-  u.rate=sysSettings.speed||0.9;u.pitch=0.9;
-  const vs=speechSynthesis.getVoices();
-  const sel=vs.find(v=>/uk english male|en-gb-male|daniel|david/i.test(v.name));
-  if(sel)u.voice=sel;
-  speechSynthesis.speak(u);
+  u.rate=sysSettings.speed; setTimeout(() => synth.speak(u), 50);
 };
 
 let _toastTimer;
 function showToast(msg,type='success'){
   const t=document.getElementById('toast');
-  t.textContent=msg;t.className=type==='error'?'error':type==='warn'?'warn':type==='info'?'info':'';
-  t.style.display='block';
-  requestAnimationFrame(()=>t.classList.add('show'));
+  t.textContent=msg;t.className=type;t.style.display='block';
+  setTimeout(()=>t.classList.add('show'),10);
   clearTimeout(_toastTimer);
   _toastTimer=setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.style.display='none',220)},3000);
 }
 
-// ─── CLOCK + ALARM TICK ──────────────────────────────────
+// ─── CLOCK TICK ──────────────────────────────────────────
 setInterval(()=>{
   const nowTs=Date.now();
   document.getElementById('liveClock').textContent=new Date(nowTs).toLocaleTimeString('en-US',{hour12:false});
   let dirty=false;
-  
-  const activeEvents = savedEvents.filter(e => !e.isArchived);
-  activeEvents.forEach(evt => {
-    if(!evt.isNotified && evt.timestamp <= nowTs){
-      triggerAlarm(evt);
-      evt.isNotified=true;
-      supabaseClient.from('protocols').update({ is_notified: true }).eq('id', evt.id).then(()=>{});
-      dirty=true;
-    }
+  savedEvents.filter(e => !e.isArchived).forEach(evt => {
+    if(!evt.isNotified && evt.timestamp <= nowTs){ triggerAlarm(evt); evt.isNotified=true; persist(); dirty=true; }
     if(!evt.isNotified){
-      const cdEl=document.getElementById(`cd-${evt.id}`),pfEl=document.getElementById(`prog-${evt.id}`);
+      const cdEl=document.getElementById(`cd-${evt.id}`);
       if(cdEl){
         const diff=evt.timestamp-nowTs;
-        if(diff>0){
-          cdEl.textContent=fmtDiff(diff);cdEl.classList.remove('exec');
-          if(pfEl){
-              const start=evt.createdAt||(evt.timestamp-3600000);
-              pfEl.style.width=Math.max(0,Math.min(100,(diff/(evt.timestamp-start))*100))+'%';
-          }
-        } else {
-            cdEl.textContent='EXECUTING';
-            cdEl.classList.add('exec');
-        }
+        if(diff>0){ cdEl.textContent=fmtDiff(diff); cdEl.classList.remove('exec'); } 
+        else { cdEl.textContent='EXECUTING'; cdEl.classList.add('exec'); }
       }
     }
   });
   if(dirty)renderViews();
 },1000);
 
-// ─── PWA & MISC ──────────────────────────────────────────
-window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();pwaPrompt=e;document.getElementById('pwaInstallContainer').style.display='block'});
-window.installPWA=async()=>{if(!pwaPrompt)return;pwaPrompt.prompt();const{outcome}=await pwaPrompt.userChoice;if(outcome==='accepted')document.getElementById('pwaInstallContainer').style.display='none';pwaPrompt=null};
-
-// Boot Init
+// ─── INIT ────────────────────────────────────────────────
 applyTheme();
 loadSettingsUI();
 renderPresets();
-document.getElementById('eventDate').setAttribute('min',new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().split('T')[0]);

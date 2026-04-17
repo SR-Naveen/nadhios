@@ -10,9 +10,10 @@
   <meta name="description" content="NaDhi OS — Enterprise Command Center"/>
   <title>NaDhi OS</title>
   <link rel="manifest" id="dynManifest"/>
+  
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
-
-  <link rel="stylesheet" href="task.css"/>
+  
+  <link rel="stylesheet" href="task.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -22,7 +23,7 @@
   <h1 class="init-title">NaDhi OS</h1>
   <p class="init-sub">Enterprise Command Center</p>
   <div class="init-ring"></div>
-  <button class="boot-btn" onclick="initializeSystem()">Initialize System</button>
+  <button class="boot-btn" onclick="boot()">Initialize System</button>
   <p class="boot-hint">Secure Connection Setup</p>
 </div>
 
@@ -31,7 +32,7 @@
   <div class="hdr-right">
     <div style="text-align:right">
       <div class="hdr-clock" id="liveClock">00:00:00</div>
-      <div class="hdr-status off" id="hdrStatus">● OFFLINE</div>
+      <div class="hdr-status off" id="hdrStatus">● LOCAL</div>
     </div>
     <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">☀️</button>
   </div>
@@ -45,6 +46,7 @@
 <div id="toast"></div>
 
 <div id="main">
+
   <section id="tab-command" class="tab-section active">
     <div class="panel">
       <div class="panel-title" id="formTitle">Command Center</div>
@@ -53,7 +55,7 @@
 
       <div class="fwrap" style="position:relative">
         <label class="flabel">Protocol Designation</label>
-        <input id="eventName" class="field" type="text" placeholder="e.g. Server Maintenance" autocomplete="off" oninput="this.classList.remove('err')"/>
+        <input id="eventName" class="field" type="text" placeholder="e.g. Server Maintenance" autocomplete="off" spellcheck="false" oninput="this.classList.remove('err')"/>
         <button class="mic-btn" id="micBtn" onclick="voiceType()" title="AI Voice Input">🎤</button>
       </div>
 
@@ -108,7 +110,6 @@
             <option value="sms">SMS 📱</option>
             <option value="voice-female">Voice Female 👩</option>
             <option value="voice-male">Voice Male 👨</option>
-            <option value="custom-music">Own Music 🎵</option>
           </select>
         </div>
       </div>
@@ -152,6 +153,7 @@
       <span class="srch-ico">🔍</span>
       <input id="searchHistory" class="srch" type="text" placeholder="Search past logs..." onkeyup="searchEvents('history')"/>
     </div>
+    <p class="hint-txt">History of completed executions</p>
     <div id="historyList" class="ev-list"></div>
     <div id="loadMoreContainer" style="text-align:center;margin-top:14px;display:none">
       <button class="cancel-btn" style="width:auto;padding:12px 30px;display:inline-block" onclick="loadMoreHistory()">Load More ↓</button>
@@ -160,35 +162,57 @@
 
   <section id="tab-settings" class="tab-section">
     <div class="auth-card">
-      <h3>Cloud Status ☁️</h3>
-      <p id="userEmailTxt" style="color: var(--primary); font-weight: 700;">GUEST MODE — SUPABASE ACTIVE</p>
-      <p style="font-size: 11px; color: var(--muted);">Data is automatically synced to your cloud database.</p>
+      <h3>Cloud & Storage ☁️</h3>
+      <p id="userEmailTxt" style="color: var(--green); font-weight: bold;">GUEST MODE ACTIVE</p>
+      <p style="font-size: 11px; color: var(--muted);">Protocols are saved to Local Storage and synced to Cloud when available.</p>
+      <div id="pwaInstallContainer" style="display:none">
+        <h4 class="pwa-h4">📲 Install as Native App</h4>
+        <p class="pwa-p">Add NaDhi OS to your home screen for offline use</p>
+        <button class="deploy-btn" onclick="installPWA()" style="margin-top:0">Install App</button>
+      </div>
     </div>
 
     <div class="panel">
       <div class="panel-title">System Settings</div>
-      <div class="toggle-row">
-        <div class="toggle-info"><span class="t-label">SFX Audio 🔊</span><span class="t-sub">Interface sounds active</span></div>
+
+      <div class="toggle-row" style="margin-bottom:18px">
+        <div class="toggle-info"><span class="t-label">SFX Audio 🔊</span><span class="t-sub">J.A.R.V.I.S style interface sounds</span></div>
         <label class="switch"><input type="checkbox" id="sfxToggle" onchange="toggleSFX()"/><span class="slider"></span></label>
       </div>
 
-      <div class="fwrap">
+      <div class="fwrap" style="margin-bottom:14px">
         <label class="flabel">Alarm Tone</label>
         <select id="settingTone" class="field" onchange="updateSettings()">
-          <option value="default">Sci-Fi Alert</option>
-          <option value="bell">Classic Bell 🔔</option>
+          <option value="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3">Sci-Fi Alert (Default)</option>
+          <option value="https://assets.mixkit.co/active_storage/sfx/995/995-preview.mp3">Classic Bell 🔔</option>
+          <option value="https://assets.mixkit.co/active_storage/sfx/2865/2865-preview.mp3">Warning Siren 🚨</option>
         </select>
       </div>
-      
+      <div class="fwrap" style="margin-bottom:14px">
+        <div class="rng-row"><label class="flabel" style="margin:0">Master Volume</label><span class="rng-val" id="volLabel">100%</span></div>
+        <input type="range" id="settingVolume" min="0.1" max="1" step="0.1" value="1" oninput="updateSettings()"/>
+      </div>
+      <div class="fwrap" style="margin-bottom:18px">
+        <div class="rng-row"><label class="flabel" style="margin:0">AI Voice Speed</label><span class="rng-val" id="speedLabel">0.9x</span></div>
+        <input type="range" id="settingSpeed" min="0.5" max="1.5" step="0.1" value="0.9" oninput="updateSettings()"/>
+      </div>
+
       <button class="test-btn" onclick="testAlarm()">🔊 Test Alarm System</button>
+
+      <hr style="border-color:var(--border);margin-bottom:18px"/>
+      <div style="font-size:11px;color:var(--muted);text-align:center;line-height:2;font-weight:500">
+        NaDhi OS — Mobile Production Build<br>
+        Full-Stack Enterprise Scheduler<br>
+        <span style="color:var(--primary)">localStorage / Supabase Ready</span>
+      </div>
     </div>
   </section>
 </div>
 
 <nav>
   <button class="nav-item active" onclick="switchTab('command',this)"><span class="nav-icon">🚀</span>Command</button>
-  <button class="nav-item" onclick="switchTab('radar',this)"><span class="nav-icon">📡</span>Radar<span class="nav-badge" id="radarBadge"></span></button>
-  <button class="nav-item" onclick="switchTab('history',this)"><span class="nav-icon">📜</span>History<span class="nav-badge" id="histBadge"></span></button>
+  <button class="nav-item" id="navRadar" onclick="switchTab('radar',this)"><span class="nav-icon">📡</span>Radar<span class="nav-badge" id="radarBadge"></span></button>
+  <button class="nav-item" id="navHistory" onclick="switchTab('history',this)"><span class="nav-icon">📜</span>History<span class="nav-badge" id="histBadge"></span></button>
   <button class="nav-item" onclick="switchTab('settings',this)"><span class="nav-icon">⚙️</span>Settings</button>
 </nav>
 
@@ -196,9 +220,11 @@
   <div class="modal-box">
     <div class="m-icon">🚨</div>
     <div class="m-title">Critical Alert</div>
+    <div class="m-sub">Execution Target Reached</div>
     <div class="m-name" id="modalEventName">--</div>
+    <div class="m-channel">Channel: <span id="modalEventMode">--</span></div>
     <div class="modal-btns">
-      <button class="btn-snooze" onclick="snoozeAlarm()">Snooze ⏳</button>
+      <button class="btn-snooze" onclick="snoozeAlarm()">Snooze 5m ⏳</button>
       <button class="btn-ack" onclick="acknowledgeAlarm()">Stop 🛑</button>
     </div>
   </div>

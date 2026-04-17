@@ -561,3 +561,11 @@ window.reqNotify = function(){
     if(p==='granted') showToast('Push Alerts Enabled 🔔');
   });
 };
+// ─── PWA & SERVICE WORKER REGISTRATION ─────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('Service Worker Active! 🟢'))
+      .catch(err => console.error('SW Error:', err));
+  });
+}

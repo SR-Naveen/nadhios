@@ -1,0 +1,15 @@
+{
+  "name": "NaDhi OS Command Center",
+  "short_name": "NaDhi OS",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#030810",
+  "theme_color": "#00c8ff",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1827/1827372.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

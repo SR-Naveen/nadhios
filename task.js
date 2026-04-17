@@ -281,12 +281,18 @@ window.deployProtocol = async function() {
     btn.disabled = false; btn.innerHTML = 'Deploy Protocol 🚀'; return; 
   }
 
-  // Supabase Cloud Sync (Background)
+// Supabase Cloud Sync (Exact Columns Only)
   if (supabaseClient) {
       try {
-          // Attempt to sync to cloud if table exists
-          await supabaseClient.from('protocols').upsert(newEvent);
-      } catch(e) { console.warn("Supabase sync skipped - Table might not exist yet."); }
+          const cloudData = {
+              id: newEvent.id,
+              name: newEvent.name,
+              date: newEvent.date,
+              time: newEvent.time,
+              priority: newEvent.priority
+          };
+          await supabaseClient.from('protocols').upsert(cloudData);
+      } catch(e) { console.error("Cloud Sync Error:", e); }
   }
 
   if ('Notification' in window && Notification.permission==='default') reqNotify();

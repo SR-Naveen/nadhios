@@ -407,8 +407,9 @@ window.renderViews = function() {
   if (!pagH.length) { histList.innerHTML='<div class="empty">📜 No History Logs Yet</div>'; }
   pagH.forEach((evt,i) => {
     histList.insertAdjacentHTML('beforeend',`
-      <div class="ev-card hist" data-name="${evt.name.toLowerCase()}">
-        <div class="ev-title">${evt.priority==='critical'?'🔴':'🔵'} ${evt.name}</div>
+ <div class="ev-card hist" id="${evt.id}" data-name="${evt.name.toLowerCase()}">
+  <div class="swipe-bg">🗑️ DELETE</div>
+  <div class="ev-title">${evt.priority==='critical'?'🔴':'🔵'} ${evt.name}</div>
         <div class="ev-meta"><span>📅 ${evt.date}</span><span>🕒 ${evt.time}</span></div>
         <div class="ev-foot">
           <div class="badges">${methodBadge(evt.method)}${catBadge(evt.category)}</div>
@@ -416,6 +417,7 @@ window.renderViews = function() {
         </div>
       </div>`);
   });
+  initSwipeGestures();
 };
 
 // ─── ALARM & TEXT TO SPEECH ──────────────────────────────
@@ -569,3 +571,149 @@ if ('serviceWorker' in navigator) {
       .catch(err => console.error('SW Error:', err));
   });
 }
+// ─── UI INTERACTIONS (CALENDAR, SEARCH, HISTORY) ─────────
+
+// 1. Toggle between List and Calendar View
+window.toggleRadarView = function(view) {
+  playClickSFX();
+  currentRadarView = view;
+  
+  // Update button styles
+  document.getElementById('btnViewList').classList.toggle('active', view === 'list');
+  document.getElementById('btnViewCal').classList.toggle('active', view === 'calendar');
+  
+  // Show/Hide containers
+  const listContainer = document.getElementById('eventsList');
+  const calContainer = document.getElementById('calendarView');
+  
+if (view === 'list') {
+      listContainer.style.display = 'block';
+      calContainer.style.display = 'none';
+  } else {
+      listContainer.style.display = 'none';
+      calContainer.style.display = 'block';
+      renderCalendarView(); // Ippo namba unmaiyana calendar-ah call panrom!
+  }
+};
+
+// ─── CALENDAR UI LOGIC ───────────────────────────────────
+window.renderCalendarView = function() {
+  const calContainer = document.getElementById('calendarView');
+  calContainer.innerHTML = '';
+
+  const yy = calMonth.getFullYear();
+  const mm = calMonth.getMonth();
+  const firstDay = new Date(yy, mm, 1).getDay();
+  const daysInMonth = new Date(yy, mm + 1, 0).getDate();
+  const today = new Date();
+
+  // Calendar Header (Month / Year & Navigation)
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  let html = `
+      <div class="cal-header">
+          <button class="cal-nav" onclick="changeCalMonth(-1)">❮</button>
+          <div class="cal-title">${monthNames[mm]} ${yy}</div>
+          <button class="cal-nav" onclick="changeCalMonth(1)">❯</button>
+      </div>
+      <div class="cal-grid">
+          <div class="cal-day-head">Sun</div><div class="cal-day-head">Mon</div>
+          <div class="cal-day-head">Tue</div><div class="cal-day-head">Wed</div>
+          <div class="cal-day-head">Thu</div><div class="cal-day-head">Fri</div>
+          <div class="cal-day-head">Sat</div>
+  `;
+
+  // Empty slots before first day
+  for (let i = 0; i < firstDay; i++) { html += `<div class="cal-cell empty"></div>`; }
+
+  // Days of the month
+  for (let d = 1; d <= daysInMonth; d++) {
+      const isToday = (d === today.getDate() && mm === today.getMonth() && yy === today.getFullYear());
+      
+      // Check if any protocols exist on this day
+      const dayEvts = savedEvents.filter(e => {
+          if(e.isArchived) return false;
+          const [evY, evM, evD] = e.date.split(',')[0].split(' '); // Depends on your date format, adjust if needed
+          const evDateObj = new Date(e.rawDate || e.timestamp);
+          return evDateObj.getDate() === d && evDateObj.getMonth() === mm && evDateObj.getFullYear() === yy;
+      });
+
+      let dotsHtml = '';
+      if(dayEvts.length > 0) {
+          const critCount = dayEvts.filter(e => e.priority === 'critical').length;
+          const stdCount = dayEvts.length - critCount;
+          if(critCount > 0) dotsHtml += `<div class="cal-dot crit"></div>`;
+          if(stdCount > 0) dotsHtml += `<div class="cal-dot std"></div>`;
+      }
+
+      html += `
+          <div class="cal-cell ${isToday ? 'today' : ''}" onclick="showEventsForDay(${d}, ${mm}, ${yy})">
+              <span class="cal-date">${d}</span>
+              <div class="cal-dots">${dotsHtml}</div>
+          </div>
+      `;
+  }
+  html += `</div>`;
+  calContainer.innerHTML = html;
+};
+
+window.changeCalMonth = function(dir) {
+  playClickSFX();
+  calMonth.setMonth(calMonth.getMonth() + dir);
+  renderCalendarView();
+};
+
+window.showEventsForDay = function(d, m, y) {
+  playClickSFX();
+  showToast(`Events for ${d}/${m + 1}/${y} (Feature coming next!)`);
+};
+// ─── SWIPE TO DELETE LOGIC ───────────────────────────────
+window.initSwipeGestures = function() {
+ const cards = document.querySelectorAll('.ev-card'); 
+  
+  cards.forEach(card => {
+    let startX = 0;
+    let currentX = 0;
+    let isDragging = false;
+
+    const startDrag = (x) => {
+      startX = x;
+      isDragging = true;
+      card.style.transition = 'none'; // Smoothness off during drag
+    };
+
+    const moveDrag = (x) => {
+      if (!isDragging) return;
+      currentX = x - startX;
+      if (currentX < 0) { // Only allow swiping LEFT
+        card.style.transform = `translateX(${Math.max(currentX, -100)}px)`;
+      }
+    };
+
+    const endDrag = () => {
+      if (!isDragging) return;
+      isDragging = false;
+      card.style.transition = 'transform 0.3s ease'; // Smooth snap back
+      
+      if (currentX < -60) {
+        // Threshold crossed -> Delete it!
+        card.style.transform = `translateX(-120%)`; 
+        setTimeout(() => abortProtocol(card.id), 250);
+      } else {
+        // Not swiped enough -> Snap back to original
+        card.style.transform = `translateX(0px)`;
+      }
+      currentX = 0;
+    };
+
+    // Touch support (Mobile)
+    card.addEventListener('touchstart', e => startDrag(e.touches[0].clientX), {passive: true});
+    card.addEventListener('touchmove', e => moveDrag(e.touches[0].clientX), {passive: true});
+    card.addEventListener('touchend', endDrag);
+
+    // Mouse support (Desktop Testing)
+    card.addEventListener('mousedown', e => startDrag(e.clientX));
+    card.addEventListener('mousemove', e => moveDrag(e.clientX));
+    card.addEventListener('mouseup', endDrag);
+    card.addEventListener('mouseleave', endDrag);
+  });
+};

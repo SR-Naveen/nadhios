@@ -10,6 +10,43 @@ if (typeof supabase !== 'undefined') {
   supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
 }
 
+// --- CAPACITOR PLUGINS SAFE INIT ---
+let LocalNotifications = null;
+if (typeof Capacitor !== 'undefined' && Capacitor.Plugins) {
+    LocalNotifications = Capacitor.Plugins.LocalNotifications;
+}
+
+// 1. Permission Kekkurathu
+async function requestNotifications() {
+    if (!LocalNotifications) return;
+    try {
+        const result = await LocalNotifications.requestPermissions();
+        console.log('Notification permission:', result.display);
+    } catch(e) { console.log('Web-la run aaguthu, push notifications thara mudiyaathu.'); }
+}
+requestNotifications();
+
+// 2. Notification-ah Click Panna Udane Voice Pesum Logic
+if (LocalNotifications) {
+    try {
+        LocalNotifications.addListener('localNotificationActionPerformed', (notificationAction) => {
+            console.log("Notification Clicked: ", notificationAction);
+            
+            const notifBody = notificationAction.notification.body || "";
+            let taskName = notifBody.replace('Boss, marakkatheenga: ', '');
+
+            setTimeout(() => {
+                if ('speechSynthesis' in window) {
+                    const utterance = new SpeechSynthesisUtterance(`Welcome back Boss. Protocol for ${taskName} is waiting for your action.`);
+                    utterance.rate = sysSettings.speed || 0.9;
+                    utterance.volume = sysSettings.volume || 1.0;
+                    window.speechSynthesis.speak(utterance);
+                }
+            }, 1000); 
+        });
+    } catch(e) {}
+}
+
 // ─── CONFIG ──────────────────────────────────────────────
 let sysSettings = JSON.parse(localStorage.getItem('nadhi_settings') || 'null');
 if (!sysSettings) {
@@ -62,12 +99,10 @@ window.playSuccessSFX= ()=>{playTone(400,'sine',0.1,0.13);setTimeout(()=>playTon
 window.playErrorSFX  = ()=>{playTone(300,'sawtooth',0.1,0.13);setTimeout(()=>playTone(150,'sawtooth',0.18,0.13),100)};
 window.playDeleteSFX = ()=>{playTone(200,'square',0.18,0.13);setTimeout(()=>playTone(100,'square',0.24,0.13),100)};
 
-// ─── PERSIST ─────────────────────────────────────────────
 function persist() {
   try { localStorage.setItem('nadhi_os_cloud', JSON.stringify(savedEvents)); } catch(e) {}
 }
 
-// ─── PRESETS ─────────────────────────────────────────────
 const defaultPresets = [
   {name:'💧 Hydration Check',priority:'standard',method:'voice-female',category:'health',icon:'💧',label:'Water'},
   {name:'🖥️ System Backup',priority:'critical',method:'sms',category:'work',icon:'🖥️',label:'Backup'},
@@ -122,7 +157,6 @@ window.applyPreset = function(name, priority, method, category='other') {
   showToast('Preset Loaded ⚡');
 };
 
-// ─── BOOT ────────────────────────────────────────────────
 window.initializeSystem = function() { boot(); }
 function boot() {
   initAudioCtx(); playSuccessSFX();
@@ -134,7 +168,6 @@ function boot() {
   showToast('System Online 🟢');
   speakFeedback('NaDhi OS System Online. Ready for commands, Boss.');
   
-  // Load initial data
   loadLocalData();
   
   if ('Notification' in window && Notification.permission==='default') {
@@ -142,7 +175,6 @@ function boot() {
   }
 }
 
-// ─── THEME & SETTINGS ────────────────────────────────────
 window.applyTheme = function() {
   const light = sysSettings.theme==='light';
   document.body.classList.toggle('light', light);
@@ -162,6 +194,7 @@ function loadSettingsUI() {
   document.getElementById('volLabel').textContent = Math.round(sysSettings.volume*100)+'%';
   document.getElementById('speedLabel').textContent = sysSettings.speed+'x';
 }
+
 window.updateSettings = function() {
   sysSettings.volume = parseFloat(document.getElementById('settingVolume').value);
   sysSettings.speed = parseFloat(document.getElementById('settingSpeed').value);
@@ -171,6 +204,56 @@ window.updateSettings = function() {
   alarmSound.src = sysSettings.tone;
   localStorage.setItem('nadhi_settings', JSON.stringify(sysSettings));
 };
+
+// 3. --- BACKGROUND ALARM MAGIC (FIXED EXTENSION FOR ANDROID) ---
+window.setNadhiAlarm = async function(taskName, alarmTime, method) {
+    if (!LocalNotifications || !alarmTime) return;
+    const alarmDate = new Date(alarmTime);
+    if (alarmDate <= new Date()) return;
+
+    let soundFile = 'beep'; // .mp3 thookiyachu
+    let channelId = 'default_channel';
+
+    if (method === 'voice-female') {
+        soundFile = 'female_alert'; // .mp3 thookiyachu
+        channelId = 'female_channel';
+    } else if (method === 'voice-male') {
+        soundFile = 'male_alert'; // .mp3 thookiyachu
+        channelId = 'male_channel';
+    }
+
+    try {
+        if (LocalNotifications.createChannel) {
+            await LocalNotifications.createChannel({
+                id: channelId,
+                name: `NaDhi OS Voice (${channelId})`,
+                description: 'Custom Voice Alerts',
+                importance: 5, 
+                visibility: 1, 
+                sound: soundFile // Ippo Android raw folder-kulla pakka-va thedum
+            });
+        }
+
+        await LocalNotifications.schedule({
+            notifications: [
+                {
+                    title: "NaDhi OS Reminder! 🚨",
+                    body: `Boss, marakkatheenga: ${taskName}`,
+                    id: Math.floor(Math.random() * 100000), 
+                    schedule: { at: alarmDate },
+                    sound: soundFile, 
+                    channelId: channelId, 
+                    actionTypeId: "",
+                    extra: null
+                }
+            ]
+        });
+        console.log("Success! Alarm set. Channel:", channelId);
+    } catch (error) {
+        console.error("Alarm set pannala error:", error);
+    }
+};
+
 window.toggleSFX = function() {
   sysSettings.sfxEnabled = document.getElementById('sfxToggle').checked;
   if (sysSettings.sfxEnabled) playSuccessSFX(); 
@@ -182,7 +265,6 @@ window.testAlarm = function() {
   setTimeout(() => acknowledgeAlarm(), 5000);
 };
 
-// ─── VOICE INPUT ─────────────────────────────────────────
 window.startVoiceTyping = window.voiceType = function() {
   playClickSFX();
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -211,12 +293,12 @@ window.startVoiceTyping = window.voiceType = function() {
   r.onend = () => btn.classList.remove('rec');
   r.start();
 };
+
 window.handleChannelChange = function() {
   document.getElementById('customMusicGroup').style.display =
     document.getElementById('alertType').value==='custom-music' ? 'block' : 'none';
 };
 
-// ─── DATA SYNC & DEPLOY ──────────────────────────────────
 function loadLocalData() {
   const local = localStorage.getItem('nadhi_os_cloud');
   if(local) {
@@ -271,9 +353,12 @@ window.deployProtocol = async function() {
   btn.disabled=true;
   btn.innerHTML=`<span class="spinner"></span>${editingEventId?'Updating...':'Deploying...'}`;
 
-  // Local Save (Fast UI)
   if (editingEventId) savedEvents=savedEvents.map(e=>e.id===editingEventId?newEvent:e);
   else savedEvents.push(newEvent);
+
+  if (newEvent.timestamp) {
+      window.setNadhiAlarm(newEvent.name, newEvent.timestamp, newEvent.method);
+  }
   
   try { persist(); } catch(e) {
     showToast('Storage Full! Remove old data.','error'); playErrorSFX();
@@ -281,15 +366,11 @@ window.deployProtocol = async function() {
     btn.disabled = false; btn.innerHTML = 'Deploy Protocol 🚀'; return; 
   }
 
-// Supabase Cloud Sync (Exact Columns Only)
   if (supabaseClient) {
       try {
           const cloudData = {
-              id: newEvent.id,
-              name: newEvent.name,
-              date: newEvent.date,
-              time: newEvent.time,
-              priority: newEvent.priority
+              id: newEvent.id, name: newEvent.name, date: newEvent.date,
+              time: newEvent.time, priority: newEvent.priority
           };
           await supabaseClient.from('protocols').upsert(cloudData);
       } catch(e) { console.error("Cloud Sync Error:", e); }
@@ -342,21 +423,16 @@ window.editProtocol = function(id) {
 
 window.abortProtocol = async function(id) {
   playDeleteSFX();
-  
-  // Update Local
   savedEvents=savedEvents.filter(e=>e.id!==id);
   persist(); renderViews(); updateNavBadges();
 
-  // Update Supabase
   if(supabaseClient) {
       try { await supabaseClient.from('protocols').delete().eq('id', id); } catch(e) {}
   }
-
   showToast('Protocol Deleted','error');
   speakFeedback('Protocol aborted, Boss.');
 };
 
-// ─── RENDER ──────────────────────────────────────────────
 function catBadge(c){ return {work:'<span class="bdg b-cyan">💼 Work</span>',health:'<span class="bdg b-amber">💊 Health</span>',personal:'<span class="bdg b-muted">🏠 Personal</span>',other:'<span class="bdg b-muted">📌 Other</span>'}[c]||'<span class="bdg b-muted">📌 Other</span>' }
 function methodBadge(m){ return {sms:'<span class="bdg b-muted">📱 SMS</span>','voice-female':'<span class="bdg b-cyan">👩 Voice</span>','voice-male':'<span class="bdg b-cyan">👨 Voice</span>','custom-music':'<span class="bdg b-amber">🎵 Music</span>'}[m]||'' }
 function fmtDiff(ms){ const s=Math.floor(ms/1000);return`${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}` }
@@ -420,7 +496,6 @@ window.renderViews = function() {
   initSwipeGestures();
 };
 
-// ─── ALARM & TEXT TO SPEECH ──────────────────────────────
 const synth = window.speechSynthesis;
 let systemVoices = [];
 function populateVoiceList() { if (synth) systemVoices = synth.getVoices(); }
@@ -496,7 +571,6 @@ window.acknowledgeAlarm=async function(){
   activeAlarmEventId=null;
 };
 
-// ─── CSV / CLEAR ─────────────────────────────────────────
 window.clearHistory=async function(){
   playClickSFX();
   if(!confirm('Clear all history logs?'))return;
@@ -534,7 +608,6 @@ function showToast(msg,type='success'){
   _toastTimer=setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.style.display='none',220)},3000);
 }
 
-// ─── CLOCK TICK ──────────────────────────────────────────
 setInterval(()=>{
   const nowTs=Date.now();
   document.getElementById('liveClock').textContent=new Date(nowTs).toLocaleTimeString('en-US',{hour12:false});
@@ -553,17 +626,16 @@ setInterval(()=>{
   if(dirty)renderViews();
 },1000);
 
-// ─── INIT ────────────────────────────────────────────────
 applyTheme();
 loadSettingsUI();
 renderPresets();
-// ─── NOTIFICATIONS FIX ───────────────────────────────────
+
 window.reqNotify = function(){
   if('Notification' in window) Notification.requestPermission().then(p=>{
     if(p==='granted') showToast('Push Alerts Enabled 🔔');
   });
 };
-// ─── PWA & SERVICE WORKER REGISTRATION ─────────────────
+
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js')
@@ -571,18 +643,14 @@ if ('serviceWorker' in navigator) {
       .catch(err => console.error('SW Error:', err));
   });
 }
-// ─── UI INTERACTIONS (CALENDAR, SEARCH, HISTORY) ─────────
 
-// 1. Toggle between List and Calendar View
 window.toggleRadarView = function(view) {
   playClickSFX();
   currentRadarView = view;
   
-  // Update button styles
   document.getElementById('btnViewList').classList.toggle('active', view === 'list');
   document.getElementById('btnViewCal').classList.toggle('active', view === 'calendar');
   
-  // Show/Hide containers
   const listContainer = document.getElementById('eventsList');
   const calContainer = document.getElementById('calendarView');
   
@@ -592,11 +660,10 @@ if (view === 'list') {
   } else {
       listContainer.style.display = 'none';
       calContainer.style.display = 'block';
-      renderCalendarView(); // Ippo namba unmaiyana calendar-ah call panrom!
+      renderCalendarView(); 
   }
 };
 
-// ─── CALENDAR UI LOGIC ───────────────────────────────────
 window.renderCalendarView = function() {
   const calContainer = document.getElementById('calendarView');
   calContainer.innerHTML = '';
@@ -607,7 +674,6 @@ window.renderCalendarView = function() {
   const daysInMonth = new Date(yy, mm + 1, 0).getDate();
   const today = new Date();
 
-  // Calendar Header (Month / Year & Navigation)
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   let html = `
       <div class="cal-header">
@@ -622,17 +688,14 @@ window.renderCalendarView = function() {
           <div class="cal-day-head">Sat</div>
   `;
 
-  // Empty slots before first day
   for (let i = 0; i < firstDay; i++) { html += `<div class="cal-cell empty"></div>`; }
 
-  // Days of the month
   for (let d = 1; d <= daysInMonth; d++) {
       const isToday = (d === today.getDate() && mm === today.getMonth() && yy === today.getFullYear());
       
-      // Check if any protocols exist on this day
       const dayEvts = savedEvents.filter(e => {
           if(e.isArchived) return false;
-          const [evY, evM, evD] = e.date.split(',')[0].split(' '); // Depends on your date format, adjust if needed
+          const [evY, evM, evD] = e.date.split(',')[0].split(' ');
           const evDateObj = new Date(e.rawDate || e.timestamp);
           return evDateObj.getDate() === d && evDateObj.getMonth() === mm && evDateObj.getFullYear() === yy;
       });
@@ -666,7 +729,7 @@ window.showEventsForDay = function(d, m, y) {
   playClickSFX();
   showToast(`Events for ${d}/${m + 1}/${y} (Feature coming next!)`);
 };
-// ─── SWIPE TO DELETE LOGIC ───────────────────────────────
+
 window.initSwipeGestures = function() {
  const cards = document.querySelectorAll('.ev-card'); 
   
@@ -678,13 +741,13 @@ window.initSwipeGestures = function() {
     const startDrag = (x) => {
       startX = x;
       isDragging = true;
-      card.style.transition = 'none'; // Smoothness off during drag
+      card.style.transition = 'none'; 
     };
 
     const moveDrag = (x) => {
       if (!isDragging) return;
       currentX = x - startX;
-      if (currentX < 0) { // Only allow swiping LEFT
+      if (currentX < 0) { 
         card.style.transform = `translateX(${Math.max(currentX, -100)}px)`;
       }
     };
@@ -692,25 +755,21 @@ window.initSwipeGestures = function() {
     const endDrag = () => {
       if (!isDragging) return;
       isDragging = false;
-      card.style.transition = 'transform 0.3s ease'; // Smooth snap back
+      card.style.transition = 'transform 0.3s ease'; 
       
       if (currentX < -60) {
-        // Threshold crossed -> Delete it!
         card.style.transform = `translateX(-120%)`; 
         setTimeout(() => abortProtocol(card.id), 250);
       } else {
-        // Not swiped enough -> Snap back to original
         card.style.transform = `translateX(0px)`;
       }
       currentX = 0;
     };
 
-    // Touch support (Mobile)
     card.addEventListener('touchstart', e => startDrag(e.touches[0].clientX), {passive: true});
     card.addEventListener('touchmove', e => moveDrag(e.touches[0].clientX), {passive: true});
     card.addEventListener('touchend', endDrag);
 
-    // Mouse support (Desktop Testing)
     card.addEventListener('mousedown', e => startDrag(e.clientX));
     card.addEventListener('mousemove', e => moveDrag(e.clientX));
     card.addEventListener('mouseup', endDrag);
